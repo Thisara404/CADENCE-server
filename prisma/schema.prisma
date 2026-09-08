@@ -1,0 +1,153 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  TEAM_MEMBER
+  MANAGER
+  ADMIN
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  NEEDS_CORRECTION
+  APPROVED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ReviewAction {
+  REQUESTED_CHANGES
+  APPROVED
+}
+
+model User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  passwordHash String
+  fullName     String
+  role         Role            @default(TEAM_MEMBER)
+  department   String?
+  title        String?
+  avatarColor  String?
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  reports        Report[]
+  reviewComments ReviewComment[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  code        String        @unique
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  reports Report[]
+
+  @@map("projects")
+}
+
+model Report {
+  id                   String          @id @default(uuid())
+  userId               String
+  projectId            String
+  weekStartDate        DateTime
+  weekEndDate          DateTime
+  status               ReportStatus    @default(DRAFT)
+  currentVersionNumber Int             @default(1)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions       ReportVersion[]
+  reviewComments ReviewComment[]
+
+  @@map("reports")
+}
+
+model ReportVersion {
+  id                   String       @id @default(uuid())
+  reportId             String
+  versionNumber        Int
+  tasksPlannedNextWeek String?
+  blockers             String[]
+  keyBlockerIndex      Int?
+  achievements         String[]
+  keyAchievementIndex  Int?
+  devHours             Float        @default(0)
+  testingHours         Float        @default(0)
+  meetingHours         Float        @default(0)
+  docHours             Float        @default(0)
+  notes                String?
+  submittedAt          DateTime     @default(now())
+
+  report         Report          @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  tasks          TaskItem[]
+  reviewComments ReviewComment[]
+
+  @@unique([reportId, versionNumber])
+  @@map("report_versions")
+}
+
+model TaskItem {
+  id                String       @id @default(uuid())
+  reportVersionId   String
+  taskName          String
+  priority          TaskPriority @default(MEDIUM)
+  status            TaskStatus   @default(TODO)
+  plannedPercentage Int          @default(0)
+  actualPercentage  Int          @default(0)
+  plannedHours      Float        @default(0)
+  spentHours        Float        @default(0)
+  deliverableOutput String?
+
+  reportVersion ReportVersion @relation(fields: [reportVersionId], references: [id], onDelete: Cascade)
+
+  @@map("task_items")
+}
+
+model ReviewComment {
+  id              String       @id @default(uuid())
+  reportId        String
+  reportVersionId String?
+  reviewerId      String
+  comment         String
+  action          ReviewAction
+  createdAt       DateTime     @default(now())
+
+  report        Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportVersion ReportVersion? @relation(fields: [reportVersionId], references: [id], onDelete: SetNull)
+  reviewer      User           @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@map("review_comments")
+}
