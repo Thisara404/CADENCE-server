@@ -23,7 +23,7 @@ async function main() {
       email: 'manager@company.com',
       passwordHash,
       fullName: 'Sarah Kim',
-      role: Role.MANAGER,
+      role: Role.ADMIN,
       department: 'Engineering Leadership',
       title: 'Engineering Manager',
       avatarColor: '#ec3013',
@@ -73,7 +73,21 @@ async function main() {
     },
   });
 
-  console.log('✅ Created 4 users (1 Manager, 3 Team Members)');
+  const admin = await prisma.user.create({
+    data: {
+      id: 'u-admin-root',
+      email: 'admin@cadence.com',
+      passwordHash,
+      fullName: 'Cadence Admin',
+      role: Role.ADMIN,
+      department: 'Engineering Operations',
+      title: 'Principal Administrator',
+      avatarColor: '#111827',
+      active: true,
+    },
+  });
+
+  console.log('✅ Created 5 users (2 Admins/Managers, 3 Team Members)');
 
   // 2. Create Projects
   const mobileProject = await prisma.project.create({
@@ -255,56 +269,105 @@ async function main() {
       projectId: cloudProject.id,
       weekStartDate: w36.start,
       weekEndDate: w36.end,
+      currentVersionNumber: 2,
       status: ReportStatus.NEEDS_CORRECTION,
-      currentVersionNumber: 1,
       versions: {
-        create: {
-          versionNumber: 1,
-          tasksPlannedNextWeek: 'Set up Terraform configurations for multi-region EKS cluster.',
-          blockers: [
-            'Staging AWS quota limit reached for c6g.large instances',
-            'IAM role propagation delay during automated terraform run',
-          ],
-          keyBlockerIndex: 0,
-          achievements: ['Completed Dockerfile optimization, reducing image size by 62%.'],
-          keyAchievementIndex: 0,
-          devHours: 20,
-          testingHours: 10,
-          meetingHours: 4,
-          docHours: 3,
-          tasks: {
-            create: [
-              {
-                taskName: 'Multi-stage Dockerfile overhaul',
-                priority: TaskPriority.HIGH,
-                status: TaskStatus.DONE,
-                plannedPercentage: 100,
-                actualPercentage: 100,
-                plannedHours: 12,
-                spentHours: 11,
-                deliverableOutput: '', // Missing deliverable link flagged by manager
-              },
-              {
-                taskName: 'EKS cluster Helm charts setup',
-                priority: TaskPriority.HIGH,
-                status: TaskStatus.IN_PROGRESS,
-                plannedPercentage: 80,
-                actualPercentage: 50,
-                plannedHours: 14,
-                spentHours: 16,
-                deliverableOutput: 'Work in branch feat/helm-setup',
-              },
+        create: [
+          {
+            versionNumber: 1,
+            tasksPlannedNextWeek: 'Set up Terraform configurations for multi-region EKS cluster.',
+            blockers: [
+              'Staging AWS quota limit reached for c6g.large instances',
+              'IAM role propagation delay during automated terraform run',
             ],
+            keyBlockerIndex: 0,
+            achievements: ['Completed Dockerfile optimization, reducing image size by 62%.'],
+            keyAchievementIndex: 0,
+            devHours: 20,
+            testingHours: 10,
+            meetingHours: 4,
+            docHours: 3,
+            notes: 'Initial submission. Quota limit ticket filed with AWS support (ref #9021).',
+            submittedAt: w36.end,
+            tasks: {
+              create: [
+                {
+                  taskName: 'Multi-stage Dockerfile overhaul',
+                  priority: TaskPriority.HIGH,
+                  status: TaskStatus.DONE,
+                  plannedPercentage: 100,
+                  actualPercentage: 100,
+                  plannedHours: 12,
+                  spentHours: 11,
+                  deliverableOutput: '', // Missing deliverable link flagged by manager
+                },
+                {
+                  taskName: 'EKS cluster Helm charts setup',
+                  priority: TaskPriority.HIGH,
+                  status: TaskStatus.IN_PROGRESS,
+                  plannedPercentage: 80,
+                  actualPercentage: 50,
+                  plannedHours: 14,
+                  spentHours: 16,
+                  deliverableOutput: 'Work in branch feat/helm-setup',
+                },
+              ],
+            },
           },
-        },
+          {
+            versionNumber: 2,
+            tasksPlannedNextWeek: 'Deploy Helm charts across secondary region staging cluster.',
+            blockers: [
+              'Staging AWS quota limit reached for c6g.large instances (ticket escalated)',
+            ],
+            keyBlockerIndex: 0,
+            achievements: [
+              'Completed Dockerfile optimization, reducing image size by 62%.',
+              'Attached GitHub PR link and automated CI validation artifacts.',
+            ],
+            keyAchievementIndex: 1,
+            devHours: 22,
+            testingHours: 11,
+            meetingHours: 4,
+            docHours: 3,
+            notes: 'Revised submission: Added Dockerfile overhaul PR #402 and updated Helm notes.',
+            submittedAt: new Date(w36.end.getTime() + 86400000), // Next day
+            tasks: {
+              create: [
+                {
+                  taskName: 'Multi-stage Dockerfile overhaul',
+                  priority: TaskPriority.HIGH,
+                  status: TaskStatus.DONE,
+                  plannedPercentage: 100,
+                  actualPercentage: 100,
+                  plannedHours: 12,
+                  spentHours: 12,
+                  deliverableOutput: 'https://github.com/org/infra/pull/402', // Added in v2!
+                },
+                {
+                  taskName: 'EKS cluster Helm charts setup',
+                  priority: TaskPriority.HIGH,
+                  status: TaskStatus.DONE,
+                  plannedPercentage: 80,
+                  actualPercentage: 85,
+                  plannedHours: 14,
+                  spentHours: 15,
+                  deliverableOutput: 'https://github.com/org/infra/tree/feat/helm-setup',
+                },
+              ],
+            },
+          },
+        ],
       },
       reviewComments: {
-        create: {
-          reviewerId: sarah.id,
-          comment:
-            'Please provide the deliverable PR link for the Dockerfile overhaul and update the EKS Helm chart notes before resubmitting.',
-          action: ReviewAction.REQUESTED_CHANGES,
-        },
+        create: [
+          {
+            reviewerId: sarah.id,
+            comment:
+              'Please provide the deliverable PR link for the Dockerfile overhaul and update the EKS Helm chart notes before resubmitting.',
+            action: ReviewAction.REQUESTED_CHANGES,
+          },
+        ],
       },
     },
   });

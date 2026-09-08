@@ -1,6 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role, ReportStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+
+const AVATAR_COLORS = ['#ec3013', '#2563eb', '#059669', '#7c3aed', '#d97706', '#db2777', '#0891b2', '#16a34a'];
 
 @Injectable()
 export class UsersService {
@@ -125,7 +128,110 @@ export class UsersService {
     };
   }
 
-  async updateRole(id: string, role: Role) {
+  async createUser(dto: {
+    fullName: string;
+    email: string;
+    password: string;
+    role?: Role;
+    department?: string;
+    title?: string;
+  }) {
+    if (!dto.email || !dto.password || !dto.fullName) {
+      throw new BadRequestException('Full name, email, and password are required');
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase().trim() },
+    });
+    if (existing) {
+      throw new ConflictException('A user with this email address already exists');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const randomColor = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+
+    const role = dto.role === Role.MANAGER ? Role.ADMIN : (dto.role || Role.TEAM_MEMBER);
+    const title =
+      dto.title ||
+      (role === Role.ADMIN
+        ? 'Engineering Manager / Administrator'
+        : 'Software Engineer');
+
+    return this.prisma.user.create({
+      data: {
+        email: dto.email.toLowerCase().trim(),
+        passwordHash,
+        fullName: dto.fullName.trim(),
+        role,
+        department: dto.department || 'Engineering',
+        title,
+        avatarColor: randomColor,
+        active: true,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        department: true,
+        title: true,
+        avatarColor: true,
+        active: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async deleteUser(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    // Protection rule: Root/Initial Admin account CANNOT be deleted
+    if (user.id === 'u-admin-root' || user.email === 'admin@cadence.com') {
+      throw new BadRequestException('The primary system administrator account is protected and cannot be deleted.');
+    }
+
+    // Protection rule: Cannot delete the last remaining admin
+    if (user.role === Role.ADMIN) {
+      const adminCount = await this.prisma.user.count({ where: { role: Role.ADMIN } });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Cannot delete the last remaining Administrator in the system.');
+      }
+    }
+
+    // Cascade delete user data
+    await this.prisma.reviewComment.deleteMany({ where: { reviewerId: id } });
+    await this.prisma.report.deleteMany({ where: { userId: id } });
+    await this.prisma.user.delete({ where: { id } });
+
+    return { success: true, message: `User ${user.fullName} deleted successfully.` };
+  }
+
+  async changePassword(id: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 4) {
+      throw new BadRequestException('New password must be at least 4 characters long.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash },
+    });
+
+    return { success: true, message: `Password updated successfully for ${user.fullName}.` };
+  }
+
+  async updateProfile(
+    id: string,
+    data: { fullName?: string; title?: string; department?: string; avatarColor?: string },
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -134,8 +240,68 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id },
       data: {
-        role,
-        title: role === Role.MANAGER ? 'Engineering Manager' : 'Software Engineer',
+        fullName: data.fullName ? data.fullName.trim() : undefined,
+        title: data.title ? data.title.trim() : undefined,
+        department: data.department ? data.department.trim() : undefined,
+        avatarColor: data.avatarColor || undefined,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        department: true,
+        title: true,
+        avatarColor: true,
+        active: true,
+      },
+    });
+  }
+
+  async changeOwnPassword(userId: string, currentPass: string, newPass: string) {
+    if (!currentPass || !newPass) {
+      throw new BadRequestException('Current password and new password are required.');
+    }
+    if (newPass.length < 4) {
+      throw new BadRequestException('New password must be at least 4 characters long.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    const isValid = await bcrypt.compare(currentPass, user.passwordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Current password is incorrect.');
+    }
+
+    const passwordHash = await bcrypt.hash(newPass, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    return { success: true, message: 'Your password has been changed successfully.' };
+  }
+
+  async updateRole(id: string, role: Role) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const targetRole = role === Role.MANAGER ? Role.ADMIN : role;
+
+    if ((user.id === 'u-admin-root' || user.email === 'admin@cadence.com') && targetRole !== Role.ADMIN) {
+      throw new BadRequestException('The primary system administrator account role cannot be changed.');
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        role: targetRole,
+        title: targetRole === Role.ADMIN ? 'Engineering Manager / Administrator' : 'Software Engineer',
       },
       select: {
         id: true,
@@ -152,6 +318,11 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    // Protection rule: Root admin cannot be deactivated
+    if (user.id === 'u-admin-root' || user.email === 'admin@cadence.com') {
+      throw new BadRequestException('The primary system administrator account cannot be deactivated.');
     }
 
     return this.prisma.user.update({

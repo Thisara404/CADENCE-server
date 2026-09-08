@@ -2,7 +2,7 @@
   "name": "weekly-report-server",
   "version": "1.0.0",
   "description": "Weekly Report Generator & Team Dashboard REST API Backend",
-  "author": "",
+  "author": "Thisara Dasun",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

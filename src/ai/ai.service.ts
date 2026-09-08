@@ -77,42 +77,77 @@ export class AiService {
         const { GoogleGenAI } = await import('@google/genai');
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-        const prompt = `You are an elite Engineering Management AI Assistant for the Cadence Weekly Report platform.
-Here is the real team weekly reporting context:
-- Total Team Members: ${allMembers.length}
-- Reports In: ${submittedCount} (Compliance: ${complianceRate}%)
+        const prompt = `You are CADENCE AI ASSISTANT, an internal Engineering Management AI copilot strictly grounded in the live Supabase weekly reports database.
+Here is the real workspace reporting data:
+- Total Team Members: ${allMembers.length} (${allMembers.map((m) => m.fullName).join(', ')})
+- Reports Submitted: ${submittedCount} (Compliance: ${complianceRate}%)
 - Total Hours Logged: ${totalHoursLogged}h
 - Tasks Completed: ${totalCompletedTasks} of ${totalPlannedTasks}
-- Projects: ${allProjects.map((p) => `${p.name} (${p.code})`).join(', ')}
+- Active Projects: ${allProjects.map((p) => `${p.name} [Code: ${p.code}]`).join(', ')}
 
 Key Flagged Blockers:
-${keyBlockers.map((b) => `- [${b.project}] ${b.member}: ${b.text}`).join('\n')}
+${keyBlockers.length ? keyBlockers.map((b) => `• [${b.project}] ${b.member}: "${b.text}"`).join('\n') : '• None flagged as key'}
 
-All Blockers Reported:
-${blockersList.map((b) => `- [${b.project}] ${b.member}: ${b.text}`).join('\n')}
+All Reported Blockers:
+${blockersList.length ? blockersList.map((b) => `• [${b.project}] ${b.member}: "${b.text}"`).join('\n') : '• None reported'}
 
-Team Member Status:
+Team Member Breakdown:
 ${Object.entries(memberStatusSummary)
-  .map(([name, s]) => `- ${name}: Status=${s.status}, Tasks=${s.done}/${s.total}, Hours=${s.hours}h`)
+  .map(([name, s]) => `• ${name}: Report Status = ${s.status}, Tasks Done = ${s.done}/${s.total}, Logged Hours = ${s.hours}h`)
   .join('\n')}
 
-Manager's Query: "${query}"
+Detailed Reports Overview:
+${recentReports
+  .map((r) => {
+    const v = r.versions[0];
+    const taskDetails = v?.tasks?.map((t) => `    - [${t.status}] (${t.priority}) ${t.taskName} [${t.spentHours || 0}h]`).join('\n') || '    (No tasks recorded)';
+    return `- Report ID ${r.id} | User: ${r.user.fullName} | Project: ${r.project.name} | Status: ${r.status}
+  Tasks:
+${taskDetails}
+  Next Week: ${v?.tasksPlannedNextWeek || 'None specified'}
+  Blockers: ${(v?.blockers || []).join(', ') || 'None'}`;
+  })
+  .join('\n\n')}
 
-Provide a concise, executive, high-impact markdown response with clear bullet points and actionable manager takeaways.`;
+Manager / User Question: "${query}"
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: prompt,
-        });
+STRICT PROJECT & SCOPE GUARDRAILS:
+1. Identify yourself strictly as "CADENCE AI ASSISTANT". Do NOT mention underlying provider or model names.
+2. ONLY answer questions directly pertaining to this engineering workspace: weekly reports, tasks, submission compliance, blockers, hours logged, and active projects (Mobile App Redesign, Cloud Migration, Internal Tooling).
+3. If the user asks about ANYTHING outside this project scope (such as general knowledge, personal advice, politics, entertainment, poetry, unrelated coding, or external trivia), refuse politely and concisely:
+"I am the CADENCE AI ASSISTANT, strictly dedicated to your engineering team's weekly reports, project deliverables, blockers, and submission compliance. Please ask a question related to this workspace's projects or reports."
+4. Answer factually, directly, and concisely using the grounded Supabase data above.`;
 
-        if (response && response.text) {
-          return {
-            answer: response.text,
-            modelUsed: 'gemini-1.5-flash',
-          };
+        const modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-flash'];
+        let lastError: any = null;
+
+        for (const model of modelsToTry) {
+          try {
+            const response = await ai.models.generateContent({
+              model,
+              contents: prompt,
+            });
+
+            if (response && response.text) {
+              this.logger.log(`Successfully generated AI response using ${model}`);
+              return {
+                answer: response.text,
+                modelUsed: 'CADENCE AI ASSISTANT',
+              };
+            }
+          } catch (modelErr) {
+            lastError = modelErr;
+            this.logger.warn(`Model ${model} failed: ${modelErr.message || modelErr}`);
+            // Small pause on rate limit or spike before fallback
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
+
+        if (lastError) {
+          throw lastError;
         }
       } catch (err) {
-        this.logger.warn(`Gemini API call failed, falling back to analytical intelligence: ${err.message}`);
+        this.logger.error(`Gemini API call failed, falling back to analytical engine: ${err.message || err}`);
       }
     }
 
@@ -138,12 +173,12 @@ Provide a concise, executive, high-impact markdown response with clear bullet po
       const s = memberStatusSummary[foundName] || { status: 'SUBMITTED', hours: 38, done: 4, total: 5 };
       fallbackText = `### 👤 Member Profile: ${foundName}\n\n- **Current Report Status:** \`${s.status}\`\n- **Tasks Completed:** ${s.done} of ${s.total} (${Math.round((s.done / (s.total || 1)) * 100)}%)\n- **Logged Time:** ${s.hours} hours\n\n**Theme:** Steady progress with focus on deliverable closure and peer code reviews.`;
     } else {
-      fallbackText = `### 🤖 Cadence AI Assistant\n\nI can analyze team reports across several dimensions:\n- **Blockers & Impediments**: *"Summarize recurring blockers across projects"*\n- **Executive Digest**: *"Give me the weekly team summary"*\n- **Compliance Tracking**: *"Check submission compliance rate"*\n- **Member Performance**: *"How did Alex or Dana perform this week?"*`;
+      fallbackText = `I am the CADENCE AI ASSISTANT, strictly dedicated to your engineering team's weekly reports, project deliverables, blockers, and submission compliance. Please ask a question related to this workspace's projects or reports.`;
     }
 
     return {
       answer: fallbackText,
-      modelUsed: 'Cadence Engine (Gemini 1.5 Protocol)',
+      modelUsed: 'CADENCE AI ASSISTANT',
     };
   }
 }
