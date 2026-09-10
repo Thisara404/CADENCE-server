@@ -23,11 +23,13 @@ import { Role, ReportStatus } from '@prisma/client';
 export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
+  @Roles(Role.TEAM_MEMBER)
   @Post('draft')
   async saveDraft(@CurrentUser('id') userId: string, @Body() dto: SaveDraftDto) {
     return this.reportsService.saveDraft(userId, dto);
   }
 
+  @Roles(Role.TEAM_MEMBER)
   @Post(':id/submit')
   async submitReport(
     @CurrentUser('id') userId: string,

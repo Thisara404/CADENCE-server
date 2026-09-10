@@ -208,7 +208,7 @@ export class WorkspaceTabsTool {
       path: '/admin/users',
       description:
         'Central administrative directory for user accounts, role-based access control, account activations, and credential management.',
-      allowedRoles: [Role.MANAGER, Role.ADMIN],
+      allowedRoles: [Role.ADMIN],
       sections: [
         'User Directory Table (Name, Email, Role, Department, Status, Actions)',
         'Role Badges: TEAM_MEMBER, MANAGER, ADMIN',
@@ -219,10 +219,10 @@ export class WorkspaceTabsTool {
       ],
       roleCapabilities: {
         [Role.TEAM_MEMBER]: [
-          'Restricted access: Members do not have permission to view or manage other accounts.',
+          'Restricted access: Tab not accessible to Team Members.',
         ],
         [Role.MANAGER]: [
-          'View team members in the organization and check department alignment',
+          'Restricted access: Tab not accessible to Managers (Admin-only).',
         ],
         [Role.ADMIN]: [
           'Create new user accounts and invite team members',

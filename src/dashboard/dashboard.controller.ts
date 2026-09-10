@@ -17,8 +17,12 @@ export class DashboardController {
   }
 
   @Get('charts')
-  async getCharts() {
-    return this.dashboardService.getCharts();
+  async getCharts(
+    @Query('week') week?: string,
+    @Query('projectId') projectId?: string,
+    @Query('memberId') memberId?: string,
+  ) {
+    return this.dashboardService.getCharts(week, projectId, memberId);
   }
 
   @Get('blockers-and-achievements')

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role, ReportStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -224,23 +224,41 @@ export class UsersService {
     return { success: true, message: `User ${user.fullName} deleted successfully.` };
   }
 
-  async changePassword(id: string, newPassword: string) {
+  async changePassword(currentUserId: string, targetUserId: string, newPassword: string) {
     if (!newPassword || newPassword.length < 6) {
       throw new BadRequestException('New password must be at least 6 characters long.');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
+    const currentUser = await this.prisma.user.findUnique({ where: { id: currentUserId } });
+    if (!currentUser || currentUser.role !== Role.ADMIN) {
+      throw new ForbiddenException('Only Administrators are permitted to reset user passwords.');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!targetUser) {
+      throw new NotFoundException(`User with ID ${targetUserId} not found`);
+    }
+
+    const isTargetRootAdmin =
+      targetUser.id === 'u-admin-root' || targetUser.email.toLowerCase() === 'admin@cadence.com';
+    const isCurrentRootAdmin =
+      currentUser.id === 'u-admin-root' || currentUser.email.toLowerCase() === 'admin@cadence.com';
+
+    // Root Admin can change anyone's password
+    // Other Admins CANNOT change the primary Root Admin's password
+    if (isTargetRootAdmin && !isCurrentRootAdmin) {
+      throw new ForbiddenException(
+        'The primary system administrator password can only be modified by the root administrator.',
+      );
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({
-      where: { id },
+      where: { id: targetUserId },
       data: { passwordHash },
     });
 
-    return { success: true, message: `Password updated successfully for ${user.fullName}.` };
+    return { success: true, message: `Password updated successfully for ${targetUser.fullName}.` };
   }
 
   async updateProfile(

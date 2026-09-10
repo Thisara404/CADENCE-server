@@ -3,6 +3,14 @@ import { TaskPriority, TaskStatus } from '@prisma/client';
 
 export class TaskItemDto {
   @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  @IsOptional()
+  reportVersionId?: string;
+
+  @IsString()
   @IsNotEmpty({ message: 'Task name is required' })
   taskName: string;
 

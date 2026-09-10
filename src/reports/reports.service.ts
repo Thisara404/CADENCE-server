@@ -8,13 +8,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SaveDraftDto } from './dto/create-draft.dto';
 import { SubmitReportDto } from './dto/submit-report.dto';
 import { ReviewReportDto, ReviewActionType } from './dto/review-report.dto';
-import { ReportStatus, ReviewAction } from '@prisma/client';
+import { ReportStatus, ReviewAction, Role } from '@prisma/client';
 
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
   async saveDraft(userId: string, dto: SaveDraftDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (user?.role !== Role.TEAM_MEMBER) {
+      throw new ForbiddenException('Only Team Members are permitted to create or edit report drafts.');
+    }
+
     let report;
 
     if (dto.reportId) {
@@ -131,6 +139,14 @@ export class ReportsService {
   }
 
   async submitReport(userId: string, reportId: string, dto?: SubmitReportDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (user?.role !== Role.TEAM_MEMBER) {
+      throw new ForbiddenException('Only Team Members are permitted to submit reports.');
+    }
+
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
       include: {
@@ -523,6 +539,20 @@ export class ReportsService {
     const targetStatus = isApprove ? ReportStatus.APPROVED : ReportStatus.NEEDS_CORRECTION;
     const actionType = isApprove ? ReviewAction.APPROVED : ReviewAction.REQUESTED_CHANGES;
 
+    let finalComment = dto.comment || (isApprove ? 'Report approved with no changes.' : 'Changes requested.');
+    if (
+      (dto.taskFeedback && dto.taskFeedback.length > 0) ||
+      (dto.blockerFeedback && dto.blockerFeedback.length > 0) ||
+      (dto.highlightFeedback && dto.highlightFeedback.length > 0)
+    ) {
+      finalComment = JSON.stringify({
+        summary: dto.comment || '',
+        taskFeedback: dto.taskFeedback || [],
+        blockerFeedback: dto.blockerFeedback || [],
+        highlightFeedback: dto.highlightFeedback || [],
+      });
+    }
+
     // Transition status and create review comment
     const [, reviewComment] = await this.prisma.$transaction([
       this.prisma.report.update({
@@ -534,7 +564,7 @@ export class ReportsService {
           reportId: id,
           reportVersionId: latestVersion ? latestVersion.id : null,
           reviewerId,
-          comment: dto.comment || (isApprove ? 'Report approved with no changes.' : 'Changes requested.'),
+          comment: finalComment,
           action: actionType,
         },
       }),

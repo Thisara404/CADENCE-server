@@ -14,4 +14,13 @@ export class ReviewReportDto {
   @IsNotEmpty({ message: 'Feedback comment is required when requesting changes' })
   @IsString()
   comment?: string;
+
+  @IsOptional()
+  taskFeedback?: Array<{ taskName: string; note: string; tags?: string[] }>;
+
+  @IsOptional()
+  blockerFeedback?: Array<{ blocker: string; note: string }>;
+
+  @IsOptional()
+  highlightFeedback?: Array<{ highlight: string; note: string }>;
 }

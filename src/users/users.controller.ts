@@ -59,14 +59,15 @@ export class UsersController {
     return this.usersService.deleteUser(id);
   }
 
-  // Admin can reset password for any user
+  // Admin and Root Admin can reset passwords for other users
   @Roles(Role.ADMIN)
   @Patch(':id/password')
   async resetPassword(
+    @CurrentUser('id') currentUserId: string,
     @Param('id') id: string,
     @Body('newPassword') newPassword: string,
   ) {
-    return this.usersService.changePassword(id, newPassword);
+    return this.usersService.changePassword(currentUserId, id, newPassword);
   }
 
   @Roles(Role.ADMIN, Role.MANAGER)
