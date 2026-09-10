@@ -150,11 +150,13 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const randomColor = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
 
-    const role = dto.role === Role.MANAGER ? Role.ADMIN : (dto.role || Role.TEAM_MEMBER);
+    const role = dto.role || Role.TEAM_MEMBER;
     const title =
       dto.title ||
       (role === Role.ADMIN
-        ? 'Engineering Manager / Administrator'
+        ? 'System Administrator'
+        : role === Role.MANAGER
+        ? 'Engineering Manager'
         : 'Software Engineer');
 
     return this.prisma.user.create({
@@ -291,17 +293,20 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    const targetRole = role === Role.MANAGER ? Role.ADMIN : role;
-
-    if ((user.id === 'u-admin-root' || user.email === 'admin@cadence.com') && targetRole !== Role.ADMIN) {
+    if ((user.id === 'u-admin-root' || user.email === 'admin@cadence.com') && role !== Role.ADMIN) {
       throw new BadRequestException('The primary system administrator account role cannot be changed.');
     }
 
     return this.prisma.user.update({
       where: { id },
       data: {
-        role: targetRole,
-        title: targetRole === Role.ADMIN ? 'Engineering Manager / Administrator' : 'Software Engineer',
+        role,
+        title:
+          role === Role.ADMIN
+            ? 'System Administrator'
+            : role === Role.MANAGER
+            ? 'Engineering Manager'
+            : 'Software Engineer',
       },
       select: {
         id: true,
