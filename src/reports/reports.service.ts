@@ -179,6 +179,17 @@ export class ReportsService {
       tasks: report.versions[0]?.tasks || [],
     };
 
+    if (new Date(payload.weekEndDate) < new Date(payload.weekStartDate)) {
+      throw new BadRequestException('Week end date cannot be earlier than week start date');
+    }
+
+    const namedTasks = (payload.tasks || []).filter(
+      (t: any) => t.taskName && t.taskName.trim().length > 0,
+    );
+    if (namedTasks.length === 0) {
+      throw new BadRequestException('A submitted report must contain at least one task item with a title');
+    }
+
     // Update Report metadata and transition status
     await this.prisma.report.update({
       where: { id: report.id },
@@ -344,8 +355,17 @@ export class ReportsService {
     if (query.projectId && query.projectId !== 'undefined' && query.projectId !== 'ALL') {
       where.projectId = query.projectId;
     }
+    // Drafts are strictly private to individual members and must NEVER appear in manager team reports queries!
     if (query.status && (query.status as string) !== 'undefined' && (query.status as string) !== 'ALL') {
+      if (query.status === ReportStatus.DRAFT) {
+        return {
+          reports: [],
+          pagination: { total: 0, page, limit, totalPages: 0 },
+        };
+      }
       where.status = query.status;
+    } else {
+      where.status = { not: ReportStatus.DRAFT };
     }
     if (
       query.weekStartDate &&
@@ -484,6 +504,12 @@ export class ReportsService {
 
     if (!report) {
       throw new NotFoundException(`Report with ID ${id} not found`);
+    }
+
+    if (report.status === ReportStatus.DRAFT) {
+      throw new BadRequestException(
+        'Cannot review or approve a report in DRAFT status. Drafts are private work-in-progress for team members.',
+      );
     }
 
     if (report.status !== ReportStatus.SUBMITTED) {

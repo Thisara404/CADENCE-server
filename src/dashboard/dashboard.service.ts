@@ -65,8 +65,9 @@ export class DashboardService {
   }
 
   async getCharts() {
-    // 1. Velocity Trend across last 4 weeks
+    // 1. Velocity Trend across last 4 weeks (submitted/approved only, no drafts)
     const allReports = await this.prisma.report.findMany({
+      where: { status: { not: ReportStatus.DRAFT } },
       include: {
         versions: {
           orderBy: { versionNumber: 'desc' },
@@ -154,10 +155,11 @@ export class DashboardService {
       };
     });
 
-    // 3. Project Workload Distribution
+    // 3. Project Workload Distribution (excluding drafts)
     const projects = await this.prisma.project.findMany({
       include: {
         reports: {
+          where: { status: { not: ReportStatus.DRAFT } },
           include: {
             versions: {
               orderBy: { versionNumber: 'desc' },
@@ -222,7 +224,9 @@ export class DashboardService {
   }
 
   async getBlockersAndAchievements(weekStartDate?: string) {
-    const where: any = {};
+    const where: any = {
+      status: { not: ReportStatus.DRAFT },
+    };
     if (
       weekStartDate &&
       weekStartDate !== 'undefined' &&

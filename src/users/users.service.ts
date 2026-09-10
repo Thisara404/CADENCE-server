@@ -140,6 +140,19 @@ export class UsersService {
       throw new BadRequestException('Full name, email, and password are required');
     }
 
+    if (dto.fullName.trim().length < 2) {
+      throw new BadRequestException('Full name must be at least 2 characters long');
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(dto.email.trim())) {
+      throw new BadRequestException('Please provide a valid work email address');
+    }
+
+    if (dto.password.length < 6) {
+      throw new BadRequestException('Password must be at least 6 characters long');
+    }
+
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase().trim() },
     });
@@ -212,8 +225,8 @@ export class UsersService {
   }
 
   async changePassword(id: string, newPassword: string) {
-    if (!newPassword || newPassword.length < 4) {
-      throw new BadRequestException('New password must be at least 4 characters long.');
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters long.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id } });
@@ -264,8 +277,11 @@ export class UsersService {
     if (!currentPass || !newPass) {
       throw new BadRequestException('Current password and new password are required.');
     }
-    if (newPass.length < 4) {
-      throw new BadRequestException('New password must be at least 4 characters long.');
+    if (newPass.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters long.');
+    }
+    if (currentPass === newPass) {
+      throw new BadRequestException('New password cannot be the same as your current password.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });

@@ -15,22 +15,28 @@ export class OwnershipGuard implements CanActivate {
       throw new ForbiddenException('User is not authenticated');
     }
 
-    // Managers and Admins can view any report
-    if (user.role === Role.MANAGER || user.role === Role.ADMIN) {
-      return true;
-    }
-
     if (!reportId) {
       return true;
     }
 
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
-      select: { userId: true },
+      select: { userId: true, status: true },
     });
 
     if (!report) {
       throw new NotFoundException(`Report with ID ${reportId} not found`);
+    }
+
+    // A DRAFT report is strictly a private work-in-progress for the team member.
+    // Neither managers nor other members can view another member's unsubmitted draft!
+    if (report.status === 'DRAFT' && report.userId !== user.id) {
+      throw new ForbiddenException('Cannot access another member’s draft report. Drafts are private until submitted.');
+    }
+
+    // Managers and Admins can view any submitted, approved, or needs_correction report
+    if (user.role === Role.MANAGER || user.role === Role.ADMIN) {
+      return true;
     }
 
     if (report.userId !== user.id) {
