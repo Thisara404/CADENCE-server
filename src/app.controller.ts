@@ -24,6 +24,7 @@ export class AppController {
   }
 
   @Get('health')
+  @Get('api/health')
   async getHealth() {
     let dbStatus = 'ok';
     try {

@@ -9,7 +9,7 @@ Cadence Server is an enterprise REST backend built with **NestJS 10**, **Prisma 
 * **Backend Framework**: NestJS 10 (TypeScript)
 * **Database**: **Supabase PostgreSQL** via direct connection URI (No Docker needed)
 * **ORM & Query Engine**: Prisma 5 with automated client generation
-* **Deployment**: **Vercel Serverless Functions** (`https://cadence-server-j78w.vercel.app`) or Local (`http://localhost:5000`)
+* **Deployment**: **Vercel Cloud** (`https://cadence-server-j78w.vercel.app`) or Local Node.js runtime (`http://localhost:5000`)
 * **Frontend Integration**: Next.js client deployed on Vercel or running locally
 
 ---
@@ -32,7 +32,7 @@ npm install
 ```
 
 > [!NOTE]
-> `npm install` automatically executes the `postinstall` script (`prisma generate`), compiling the Prisma Client with both local and Vercel serverless Linux query engines (`rhel-openssl-3.0.x`).
+> `npm install` automatically executes the `postinstall` script (`prisma generate`), compiling the Prisma Client with both local and production Linux query engines (`rhel-openssl-3.0.x`).
 
 ---
 
@@ -110,18 +110,18 @@ npm run start:prod
 
 ---
 
-## 5. Deploying Server to Vercel
+## 5. Deploying Server to Vercel / Cloud
 
-The backend is pre-configured for seamless Vercel serverless deployment:
+The backend is configured for cloud hosting on Vercel or any Node.js hosting platform:
 1. Push your `server` repository to GitHub (`https://github.com/Thisara404/CADENCE-server.git`).
 2. In the **Vercel Dashboard**, open your project (`cadence-server-j78w`).
 3. In **Settings → Environment Variables**, add the following:
    * **`DATABASE_URL`**: Your Supabase direct PostgreSQL URL (`postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`)
    * **`JWT_SECRET`**: A secure random secret key
    * **`GEMINI_API_KEY`**: Google Gemini API key for AI assistant features
-   * **`CLIENT_URL`**: Your deployed frontend URL (e.g. `https://cadence-beta-thisara.vercel.app`)
+   * **`CLIENT_URL`**: Your deployed frontend URL (e.g. `https://cadence-beta-thisara.vercel.app` or `http://localhost:3000`)
 4. Click **Redeploy** (or push a commit to `main`).
-   * *Prisma Client automatically generates during Vercel's build phase via `postinstall` and `build` scripts.*
+   * *Prisma Client automatically generates during build via `postinstall` and `build` scripts.*
 
 ---
 
