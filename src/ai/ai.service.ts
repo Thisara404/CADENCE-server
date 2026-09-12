@@ -13,81 +13,338 @@ export class AiService {
     private tabsTool: WorkspaceTabsTool,
   ) {}
 
-  private generateAutofillPayload(requestedCount = 5) {
-    const taskPool = [
-      {
-        taskName: 'Refactor JWT Auth Middleware & RBAC Permission Guards',
-        priority: 'HIGH',
-        status: 'DONE',
-        plannedPercentage: 100,
-        actualPercentage: 100,
-        plannedHours: 8,
-        spentHours: 8,
-        deliverableOutput: 'https://github.com/cadence/platform/pull/142',
-      },
-      {
-        taskName: 'Optimize PostgreSQL Database Queries & Composite Indexing',
-        priority: 'HIGH',
-        status: 'DONE',
-        plannedPercentage: 100,
-        actualPercentage: 100,
-        plannedHours: 10,
-        spentHours: 10,
-        deliverableOutput: 'https://github.com/cadence/platform/pull/144',
-      },
-      {
-        taskName: 'Implement Client SWR Global Cache & Stale-While-Revalidate',
-        priority: 'MEDIUM',
-        status: 'DONE',
-        plannedPercentage: 100,
-        actualPercentage: 100,
-        plannedHours: 8,
-        spentHours: 8,
-        deliverableOutput: 'https://github.com/cadence/platform/pull/147',
-      },
-      {
-        taskName: 'Automated End-to-End Cypress Integration & Smoke Test Suite',
-        priority: 'MEDIUM',
-        status: 'IN_PROGRESS',
-        plannedPercentage: 100,
-        actualPercentage: 75,
-        plannedHours: 8,
-        spentHours: 6,
-        deliverableOutput: 'Branch: feat/cypress-smoke-tests',
-      },
-      {
-        taskName: 'Documentation & Architecture Runbook for Deployment Pipeline',
-        priority: 'LOW',
-        status: 'DONE',
-        plannedPercentage: 100,
-        actualPercentage: 100,
-        plannedHours: 4,
-        spentHours: 4,
-        deliverableOutput: 'https://wiki.internal/engineering/runbooks/v2',
-      },
-      {
-        taskName: 'Implement Real-time WebSocket Error Handling & Reconnect Logic',
-        priority: 'MEDIUM',
-        status: 'IN_PROGRESS',
-        plannedPercentage: 100,
-        actualPercentage: 60,
-        plannedHours: 6,
-        spentHours: 5,
-        deliverableOutput: 'Branch: feat/ws-reconnect-resilience',
-      },
-      {
-        taskName: 'Container Security Audit & Dependency Vulnerability Remediation',
-        priority: 'HIGH',
-        status: 'DONE',
-        plannedPercentage: 100,
-        actualPercentage: 100,
-        plannedHours: 5,
-        spentHours: 5,
-        deliverableOutput: 'Security Scan Report: 0 critical vulnerabilities',
-      },
-    ];
+  private lastDraftByUser = new Map<string, any>();
 
-    const selectedTasks = taskPool.slice(0, Math.min(Math.max(requestedCount, 1), taskPool.length));
+  private generateAutofillPayload(
+    q: string = '',
+    allProjects: any[] = [],
+    previousDraft?: any,
+  ) {
+    const qLower = (q || '').toLowerCase();
+
+    // 1. Determine Target Project
+    let matchedProject: any = null;
+
+    if (/mobile|design|mar(-01)?|ios|android|app/i.test(qLower)) {
+      matchedProject = allProjects.find(
+        (p) => p.code === 'MAR-01' || /mobile/i.test(p.name) || /design/i.test(p.name)
+      ) || { id: 'proj-mobile', code: 'MAR-01', name: 'Mobile App Redesign' };
+    } else if (/cloud|clm(-02)?|aws|k8s|kubernetes|infra/i.test(qLower)) {
+      matchedProject = allProjects.find(
+        (p) => p.code === 'CLM-02' || /cloud/i.test(p.name)
+      ) || { id: 'proj-cloud', code: 'CLM-02', name: 'Cloud Migration' };
+    } else if (/tooling|int(-03)?|internal|auth|postgres/i.test(qLower)) {
+      matchedProject = allProjects.find(
+        (p) => p.code === 'INT-03' || /tooling/i.test(p.name)
+      ) || { id: 'proj-tooling', code: 'INT-03', name: 'Internal Tooling' };
+    } else if (previousDraft?.projectCode) {
+      // If user says "add those to form" or "autofill it", inherit previous project context
+      matchedProject = allProjects.find(
+        (p) => p.code === previousDraft.projectCode || p.id === previousDraft.projectId
+      ) || { id: previousDraft.projectId, code: previousDraft.projectCode, name: previousDraft.projectName };
+    } else if (allProjects && allProjects.length > 0) {
+      // Default to Mobile App Redesign if available, otherwise first project
+      const mobile = allProjects.find((p) => p.code === 'MAR-01' || /mobile/i.test(p.name));
+      matchedProject = mobile || allProjects[0];
+    } else {
+      matchedProject = { id: 'proj-mobile', code: 'MAR-01', name: 'Mobile App Redesign' };
+    }
+
+    const isMobile =
+      matchedProject.code === 'MAR-01' ||
+      /mobile|design/i.test(matchedProject.name) ||
+      /mobile|design|mar/i.test(qLower);
+
+    const isCloud =
+      matchedProject.code === 'CLM-02' ||
+      /cloud/i.test(matchedProject.name) ||
+      /cloud|clm|aws/i.test(qLower);
+
+    // 2. Parse Desired Counts
+    let requestedTasksCount = 5;
+    const taskMatch = qLower.match(/(\d+)\s*tasks?/i);
+    if (taskMatch) {
+      requestedTasksCount = Math.min(Math.max(parseInt(taskMatch[1], 10), 1), 7);
+    }
+
+    let requestedBlockersCount = 2;
+    const blockerMatch = qLower.match(/(\d+)\s*blockers?/i);
+    if (blockerMatch) {
+      requestedBlockersCount = Math.min(Math.max(parseInt(blockerMatch[1], 10), 1), 5);
+    } else if (previousDraft?.blockers?.length) {
+      requestedBlockersCount = previousDraft.blockers.length;
+    }
+
+    let requestedHighlightsCount = 5;
+    const highlightMatch = qLower.match(/(\d+)\s*(highlights?|achievements?|wins?)/i);
+    if (highlightMatch) {
+      requestedHighlightsCount = Math.min(Math.max(parseInt(highlightMatch[1], 10), 1), 6);
+    } else if (previousDraft?.achievements?.length) {
+      requestedHighlightsCount = previousDraft.achievements.length;
+    }
+
+    // 3. Project-Specific Pools
+    let taskPool: any[] = [];
+    let blockerPool: string[] = [];
+    let highlightPool: string[] = [];
+    let plannedNextWeek = '';
+
+    if (isMobile) {
+      taskPool = [
+        {
+          taskName: 'Develop Offline Data Synchronization Logic & SQLite Cache',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://github.com/cadence/mobile/pull/108',
+        },
+        {
+          taskName: 'Implement User Onboarding Flow & Animated Transitions',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://github.com/cadence/mobile/pull/112',
+        },
+        {
+          taskName: 'Finalize Responsive UI/UX Designs for Key Reporting Screens',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://www.figma.com/design/cadence-mobile-screens',
+        },
+        {
+          taskName: 'Integrate Third-Party SSO & Biometric Authentication SDK',
+          priority: 'MEDIUM',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://github.com/cadence/mobile/pull/117',
+        },
+        {
+          taskName: 'Refactor Image Loading Subsystem & Asset Caching Mechanism',
+          priority: 'MEDIUM',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 6,
+          spentHours: 6,
+          deliverableOutput: 'https://github.com/cadence/mobile/pull/120',
+        },
+        {
+          taskName: 'Investigate Cross-Platform CustomDatePicker & Touch Target Discrepancies',
+          priority: 'HIGH',
+          status: 'IN_PROGRESS',
+          plannedPercentage: 100,
+          actualPercentage: 60,
+          plannedHours: 6,
+          spentHours: 6,
+          deliverableOutput: 'Branch: fix/cross-platform-ui-components',
+        },
+        {
+          taskName: 'Maestro Automated UI & Smoke Testing Suite Configuration',
+          priority: 'LOW',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 4,
+          spentHours: 4,
+          deliverableOutput: 'Branch: feat/maestro-ui-tests',
+        },
+      ];
+
+      blockerPool = [
+        'Backend API Endpoint Delay for Offline Sync Module: Integration testing revealed significant latency (average 700ms response time) from the users/sync-data endpoint, impacting the performance of the new offline reporting module.',
+        'Cross-Platform UI Component Library Inconsistencies: Discrepancies observed in render fidelity and touch target responsiveness for custom UI components (e.g., CustomDatePicker, SwipeableCard) across iOS 16.x and Android 13/14 devices.',
+        'Push notification APNs sandbox certificate provisioning delay awaiting mobile security review.',
+      ];
+
+      highlightPool = [
+        'Completed Initial Prototype of User Onboarding Flow: Successfully developed and integrated the first iteration with animated transitions and guided tours, resulting in a 15% reduction in setup time.',
+        'Implemented Core Data Synchronization Logic: Successfully integrated and tested the foundational logic for offline data synchronization and cached reporting.',
+        'Finalized UI/UX Designs for Key Reporting Screens: Achieved sign-off on the high-fidelity UI/UX designs for primary report creation and submission screens.',
+        'Integrated Third-Party Authentication SDK: Completed the integration of the new single sign-on (SSO) and biometric authentication SDK, enhancing session security.',
+        'Optimized Image Loading and Caching Mechanism: Refactored image loading and caching subsystem, leading to a 25% improvement in media asset rendering performance.',
+        'Achieved 99.6% crash-free sessions across iOS TestFlight dogfooding milestone.',
+      ];
+
+      plannedNextWeek =
+        'Complete touch target responsiveness fixes for cross-platform components and finalize offline sync conflict resolution engine.';
+    } else if (isCloud) {
+      taskPool = [
+        {
+          taskName: 'Provision Multi-AZ Kubernetes EKS Cluster with Terraform',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 10,
+          spentHours: 10,
+          deliverableOutput: 'https://github.com/cadence/infra/pull/88',
+        },
+        {
+          taskName: 'Migrate Monolithic Workloads to Containerized Microservices',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 10,
+          spentHours: 10,
+          deliverableOutput: 'https://github.com/cadence/infra/pull/92',
+        },
+        {
+          taskName: 'Configure AWS IAM Roles for Service Accounts (IRSA) & Least Privilege',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://github.com/cadence/infra/pull/95',
+        },
+        {
+          taskName: 'Implement Prometheus & Grafana Infrastructure Health Dashboard',
+          priority: 'MEDIUM',
+          status: 'IN_PROGRESS',
+          plannedPercentage: 100,
+          actualPercentage: 80,
+          plannedHours: 6,
+          spentHours: 6,
+          deliverableOutput: 'Branch: feat/cloud-observability',
+        },
+        {
+          taskName: 'Document Zero-Downtime Database Migration Failover Procedure',
+          priority: 'LOW',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 4,
+          spentHours: 4,
+          deliverableOutput: 'https://wiki.internal/cloud/db-failover',
+        },
+      ];
+
+      blockerPool = [
+        'AWS Transit Gateway cross-VPC latency fluctuations during high-throughput database replication tests.',
+        'Awaiting enterprise security sign-off for egress network CIDR whitelisting on production VPC.',
+      ];
+
+      highlightPool = [
+        'Successfully migrated staging workload to Kubernetes with zero downtime and 35% compute cost reduction.',
+        'Automated infrastructure provisioning pipeline with Terraform and GitHub Actions.',
+        'Configured autoscaling policies handling simulated 4x traffic surges without dropped connections.',
+        'Implemented mutual TLS (mTLS) across internal microservice service mesh.',
+        'Completed disaster recovery dry-run with RTO under 4 minutes.',
+      ];
+
+      plannedNextWeek =
+        'Execute final production database cutover plan and conduct automated security compliance scanning.';
+    } else {
+      // Internal Tooling
+      taskPool = [
+        {
+          taskName: 'Refactor JWT Auth Middleware & RBAC Permission Guards',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://github.com/cadence/platform/pull/142',
+        },
+        {
+          taskName: 'Optimize PostgreSQL Database Queries & Composite Indexing',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 10,
+          spentHours: 10,
+          deliverableOutput: 'https://github.com/cadence/platform/pull/144',
+        },
+        {
+          taskName: 'Implement Client SWR Global Cache & Stale-While-Revalidate',
+          priority: 'MEDIUM',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 8,
+          spentHours: 8,
+          deliverableOutput: 'https://github.com/cadence/platform/pull/147',
+        },
+        {
+          taskName: 'Automated End-to-End Cypress Integration & Smoke Test Suite',
+          priority: 'MEDIUM',
+          status: 'IN_PROGRESS',
+          plannedPercentage: 100,
+          actualPercentage: 75,
+          plannedHours: 8,
+          spentHours: 6,
+          deliverableOutput: 'Branch: feat/cypress-smoke-tests',
+        },
+        {
+          taskName: 'Documentation & Architecture Runbook for Deployment Pipeline',
+          priority: 'LOW',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 4,
+          spentHours: 4,
+          deliverableOutput: 'https://wiki.internal/engineering/runbooks/v2',
+        },
+        {
+          taskName: 'Implement Real-time WebSocket Error Handling & Reconnect Logic',
+          priority: 'MEDIUM',
+          status: 'IN_PROGRESS',
+          plannedPercentage: 100,
+          actualPercentage: 60,
+          plannedHours: 6,
+          spentHours: 5,
+          deliverableOutput: 'Branch: feat/ws-reconnect-resilience',
+        },
+        {
+          taskName: 'Container Security Audit & Dependency Vulnerability Remediation',
+          priority: 'HIGH',
+          status: 'DONE',
+          plannedPercentage: 100,
+          actualPercentage: 100,
+          plannedHours: 5,
+          spentHours: 5,
+          deliverableOutput: 'Security Scan Report: 0 critical vulnerabilities',
+        },
+      ];
+
+      blockerPool = [
+        'Staging Redis cluster latency spikes during high-concurrency E2E runs; pending DevOps infrastructure memory bump.',
+        'Third-party payment gateway sandbox intermittent 504 gateway timeouts during automated load testing.',
+        'Staging database seed migration timeout on composite index builds during CI pipelines.',
+      ];
+
+      highlightPool = [
+        'Successfully reduced API response times across core dashboard endpoints by 38% through composite indexing.',
+        'Zero-downtime deployment script successfully validated on staging environment with automated rollback guard.',
+        'Decreased client bundle size by 22% by lazy-loading non-critical administrative subcomponents.',
+        'Achieved 100% test pass rate across 84 Cypress integration scenarios.',
+        'Completed quarterly dependency audit with zero critical or high CVE vulnerabilities.',
+      ];
+
+      plannedNextWeek =
+        'Finalize Cypress automated test coverage across user role permissions and prepare production staging release candidate.';
+    }
+
+    const selectedTasks = taskPool.slice(0, Math.min(Math.max(requestedTasksCount, 1), taskPool.length));
+    const selectedBlockers = blockerPool.slice(0, Math.min(Math.max(requestedBlockersCount, 1), blockerPool.length));
+    const selectedHighlights = highlightPool.slice(0, Math.min(Math.max(requestedHighlightsCount, 1), highlightPool.length));
 
     let devHours = 0;
     let testingHours = 0;
@@ -95,39 +352,29 @@ export class AiService {
     let docHours = 4;
 
     selectedTasks.forEach((t) => {
-      if (t.taskName.includes('Test')) {
+      if (/test|qa|cypress|smoke|maestro/i.test(t.taskName)) {
         testingHours += t.spentHours;
-      } else if (t.taskName.includes('Doc')) {
+      } else if (/doc|runbook|wiki|design|figma/i.test(t.taskName)) {
         docHours += t.spentHours;
       } else {
         devHours += t.spentHours;
       }
     });
 
-    const blockers = [
-      'Staging Redis cluster latency spikes during high-concurrency E2E runs; pending DevOps infrastructure memory bump.',
-      'Third-party payment gateway sandbox intermittent 504 gateway timeouts during automated load testing.',
-    ];
-
-    const achievements = [
-      'Successfully reduced API response times across core dashboard endpoints by 38% through composite indexing.',
-      'Zero-downtime deployment script successfully validated on staging environment with automated rollback guard.',
-    ];
-
-    const tasksPlannedNextWeek =
-      'Finalize Cypress automated test coverage across user role permissions and prepare production staging release candidate.';
-
     return {
+      projectId: matchedProject.id,
+      projectCode: matchedProject.code,
+      projectName: matchedProject.name,
       tasks: selectedTasks,
-      blockers,
+      blockers: selectedBlockers,
       keyBlockerIndex: 0,
-      achievements,
+      achievements: selectedHighlights,
       keyAchievementIndex: 0,
       devHours,
       testingHours,
       meetingHours,
       docHours,
-      tasksPlannedNextWeek,
+      tasksPlannedNextWeek: plannedNextWeek,
     };
   }
 
@@ -206,11 +453,160 @@ export class AiService {
     }
 
     // =========================================================================
-    // FEATURE 1: TAB INTELLIGENCE & DEDICATED TAB TOOL
+    // DATA RETRIEVAL (SCOPED BY ROLE)
+    // =========================================================================
+    let recentReports: any[] = [];
+    let allProjects: any[] = [];
+    let allMembers: any[] = [];
+    let myReports: any[] = [];
+
+    try {
+      if (userRole === Role.TEAM_MEMBER) {
+        const [userReportsRes, projectsRes] = await Promise.all([
+          this.prisma.report.findMany({
+            where: userId ? { userId } : undefined,
+            take: 6,
+            orderBy: { weekStartDate: 'desc' },
+            include: {
+              project: { select: { id: true, name: true, code: true } },
+              versions: {
+                orderBy: { versionNumber: 'desc' },
+                take: 1,
+                include: { tasks: true, reviewComments: true },
+              },
+            },
+          }),
+          this.prisma.project.findMany({ where: { status: 'ACTIVE' } }),
+        ]);
+        myReports = userReportsRes;
+        allProjects = projectsRes;
+      } else {
+        const [reportsRes, projectsRes, membersRes] = await Promise.all([
+          this.prisma.report.findMany({
+            take: 12,
+            orderBy: { weekStartDate: 'desc' },
+            include: {
+              user: { select: { fullName: true, title: true, email: true } },
+              project: { select: { id: true, name: true, code: true } },
+              versions: {
+                orderBy: { versionNumber: 'desc' },
+                take: 1,
+                include: { tasks: true },
+              },
+            },
+          }),
+          this.prisma.project.findMany(),
+          this.prisma.user.findMany({ where: { role: Role.TEAM_MEMBER } }),
+        ]);
+        recentReports = reportsRes;
+        allProjects = projectsRes;
+        allMembers = membersRes;
+      }
+    } catch (dbErr: any) {
+      this.logger.warn(`Failed to retrieve live reporting data from database: ${dbErr?.message}`);
+    }
+
+    if (!allProjects || allProjects.length === 0) {
+      allProjects = [
+        { id: 'proj-mobile', name: 'Mobile App Redesign', code: 'MAR-01', description: 'Next-gen cross-platform mobile experience' },
+        { id: 'proj-cloud', name: 'Cloud Migration', code: 'CLM-02', description: 'Migrating legacy monolithic workloads' },
+        { id: 'proj-tooling', name: 'Internal Tooling', code: 'INT-03', description: 'Developer productivity tools' },
+      ];
+    }
+
+    // =========================================================================
+    // FEATURE 1: INTERNAL TOOL - fill_report_form (AUTOFILL INTENT)
+    // Handles requests such as:
+    // - "i want add mobile design project with 2 blockers and 5 highlights"
+    // - "can you add those to the form"
+    // - "no i want to autofill it"
+    // - "⚡ Auto-fill 5 tasks, blockers & highlights"
+    // - "fill the form with 5 tasks"
+    // - "populate the report"
+    // =========================================================================
+    const isPureTabOrBlockerExplanation =
+      /^(what is|explain|define|how do i write|how should i write|tips for|guide to)\s+(a\s+)?(blocker|task|highlight|tab|form)/i.test(q);
+
+    const isAutofillIntent =
+      !isPureTabOrBlockerExplanation &&
+      (
+        // Direct autofill / populate verbs
+        /(auto-?fill|populate|hydrate)/i.test(q) ||
+        // "fill the form / report / fields / it"
+        /(fill|fill\s+out|fill\s+in)\s+(the\s+|this\s+)?(fields?|form|report|inputs?|it)/i.test(q) ||
+        // "add / put / apply / insert to the form / report"
+        /(add|put|apply|insert|copy)\s+(this|these|those|it|them)?\s*(to|into|in|on)\s+(the\s+|this\s+)?(form|report|page)/i.test(q) ||
+        // "can you add those to the form"
+        /add\s+(those|this|them|these|it)\s+to/i.test(q) ||
+        // "i want add / to add mobile design project with 2 blockers and 5 highlights"
+        /i\s+want\s+(to\s+)?(add|fill|populate|create|make|draft)\s+/i.test(q) ||
+        // "make/create/generate/draft/add [count] tasks/report/project"
+        /(make|create|generate|draft|fill|populate|add)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)?\s*(tasks?|report|project)/i.test(q) ||
+        // Mentions blockers AND (highlights OR achievements OR wins)
+        (q.includes('blocker') && (q.includes('highlight') || q.includes('achievement') || q.includes('win'))) ||
+        // Mentions task AND (blocker, highlight, tool, auto fill, form)
+        (q.includes('task') &&
+          (q.includes('blocker') ||
+            q.includes('highlight') ||
+            q.includes('internal tool') ||
+            q.includes('auto fill') ||
+            q.includes('autofill') ||
+            q.includes('fill') ||
+            q.includes('form'))) ||
+        // Mentions a project and add/report/blocker/highlight
+        ((q.includes('mobile') || q.includes('cloud') || q.includes('tooling') || q.includes('mar-01') || q.includes('clm-02') || q.includes('int-03')) &&
+          (q.includes('add') || q.includes('report') || q.includes('blocker') || q.includes('highlight') || q.includes('fill') || q.includes('draft')))
+      );
+
+    if (isAutofillIntent) {
+      if (userRole !== Role.TEAM_MEMBER) {
+        return {
+          answer: `### 🔒 RBAC Policy: Action Restricted to Team Members\n\nHello **${userName}**! You are logged in with the **${userRole}** role.\n\n- **Weekly Report Authoring:** In Cadence, creating, drafting, auto-filling, and submitting weekly reports is strictly limited to **Team Members**.\n- **Manager & Admin Responsibilities:** As a ${userRole}, your responsibilities include reviewing submitted reports, approving or requesting changes, managing projects, and viewing dashboard analytics.\n- **Need Help?** I can help you summarize team submissions, analyze velocity across projects, review team blockers, or explain any tab in Cadence.`,
+          modelUsed: 'CADENCE AI ASSISTANT · RBAC ENFORCER',
+        };
+      }
+
+      const userKey = userId || userName;
+      const previousDraft = this.lastDraftByUser.get(userKey);
+      const payload = this.generateAutofillPayload(q, allProjects, previousDraft);
+      this.lastDraftByUser.set(userKey, payload);
+
+      const answer =
+        `### ⚡ Cadence AI Internal Tool Executed: \`fill_report_form\`\n\n` +
+        `Hello **${userName}**! I have invoked the internal **\`fill_report_form\`** tool and automatically populated your **Weekly Report Form** for **${payload.projectName} [Code: ${payload.projectCode}]** with **${payload.tasks.length} technical tasks**, **${payload.blockers.length} blockers**, **${payload.achievements.length} highlights**, and logged hours!\n\n` +
+        `#### 📁 Selected Project:\n` +
+        `• **${payload.projectName}** [\`${payload.projectCode}\`]\n\n` +
+        `#### 📋 Tasks Generated (${payload.tasks.length}):\n` +
+        payload.tasks
+          .map(
+            (t: any, i: number) =>
+              `${i + 1}. **${t.taskName}** — \`${t.priority}\` | \`${t.status}\` | **${t.spentHours}h** | [${t.deliverableOutput}]`
+          )
+          .join('\n') +
+        `\n\n#### 🚨 Key Blocker (${payload.blockers.length} Total):\n` +
+        payload.blockers.map((b: string, i: number) => `${i + 1}. *${b}*`).join('\n') +
+        `\n\n#### 🏆 Highlights / Achievements (${payload.achievements.length} Total):\n` +
+        payload.achievements.map((a: string, i: number) => `${i + 1}. *${a}*`).join('\n') +
+        `\n\n#### ⏱️ Logged Hours Breakdown:\n` +
+        `- **Dev:** ${payload.devHours}h | **Testing:** ${payload.testingHours}h | **Meetings:** ${payload.meetingHours}h | **Docs:** ${payload.docHours}h (Total: ${payload.devHours + payload.testingHours + payload.meetingHours + payload.docHours}h)\n\n` +
+        `⚡ **Automatic Form Hydration:** If you are currently on the **[Weekly Report Form](/reports/new)**, the form fields (Project, Tasks, Blockers, Highlights, Hours) have been populated in real time! You can also click the tool action button below to review and edit.`;
+
+      return {
+        answer,
+        modelUsed: 'CADENCE AI ASSISTANT · INTERNAL TOOL (fill_report_form)',
+        toolCall: {
+          tool: 'fill_report_form',
+          data: payload,
+        },
+      };
+    }
+
+    // =========================================================================
+    // FEATURE 2: TAB INTELLIGENCE & DEDICATED TAB TOOL
     // =========================================================================
     const isAskingAboutTab =
-      ((/(explain|what is|how do i use|what can i do|help me with|about|tell me about|guide|overview|fields|requirements|sections|fill|navigate|show)/i.test(q) &&
-        (q.includes('tab') || q.includes('page') || q.includes('screen') || q.includes('form') || q.includes('here') || q.includes('where am i'))) ||
+      ((/(explain|what is|how do i use|what can i do|help me with|about|tell me about|guide|overview|requirements|sections|navigate|show)/i.test(q) &&
+        (q.includes('tab') || q.includes('page') || q.includes('screen') || (q.includes('form') && !q.includes('fill') && !q.includes('add')) || q.includes('here') || q.includes('where am i'))) ||
       q.includes('explain this tab') ||
       q.includes('what can i do here') ||
       q.includes('where am i') ||
@@ -232,119 +628,6 @@ export class AiService {
           modelUsed: 'CADENCE AI ASSISTANT · TABS TOOL',
         };
       }
-    }
-
-    // =========================================================================
-    // FEATURE 2: INTERNAL TOOL - fill_report_form
-    // e.g. "hey i want to make 5 task those are my blockers & highlights then AI use internal tool and automatically fill the fields through the details"
-    // =========================================================================
-    const isAutofillIntent =
-      /(make|create|generate|draft|fill|populate|add)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)?\s*(tasks?|report)/i.test(q) ||
-      /(fill|populate)\s+(the\s+)?(fields?|form|report)/i.test(q) ||
-      (q.includes('task') &&
-        (q.includes('blocker') ||
-          q.includes('highlight') ||
-          q.includes('internal tool') ||
-          q.includes('auto fill') ||
-          q.includes('autofill') ||
-          q.includes('fill the field') ||
-          q.includes('fill the form')));
-
-    if (isAutofillIntent) {
-      if (userRole !== Role.TEAM_MEMBER) {
-        return {
-          answer: `### 🔒 RBAC Policy: Action Restricted to Team Members\n\nHello **${userName}**! You are logged in with the **${userRole}** role.\n\n- **Weekly Report Authoring:** In Cadence, creating, drafting, auto-filling, and submitting weekly reports is strictly limited to **Team Members**.\n- **Manager & Admin Responsibilities:** As a ${userRole}, your responsibilities include reviewing submitted reports, approving or requesting changes, managing projects, and viewing dashboard analytics.\n- **Need Help?** I can help you summarize team submissions, analyze velocity across projects, review team blockers, or explain any tab in Cadence.`,
-          modelUsed: 'CADENCE AI ASSISTANT · RBAC ENFORCER',
-        };
-      }
-
-      let requestedCount = 5;
-      const countMatch = q.match(/(\d+)\s*tasks?/i) || q.match(/(\d+)/);
-      if (countMatch) {
-        requestedCount = Math.min(Math.max(parseInt(countMatch[1], 10), 1), 7);
-      } else if (q.includes('five')) requestedCount = 5;
-      else if (q.includes('four')) requestedCount = 4;
-      else if (q.includes('three')) requestedCount = 3;
-      else if (q.includes('six')) requestedCount = 6;
-      else if (q.includes('seven')) requestedCount = 7;
-
-      const payload = this.generateAutofillPayload(requestedCount);
-      const answer =
-        `### ⚡ Cadence AI Internal Tool Executed: \`fill_report_form\`\n\n` +
-        `Hello **${userName}**! I have invoked the internal **\`fill_report_form\`** tool and automatically generated **${payload.tasks.length} technical tasks**, blockers, achievements, and logged hours breakdown!\n\n` +
-        `#### 📋 Tasks Generated (${payload.tasks.length}):\n` +
-        payload.tasks
-          .map(
-            (t, i) =>
-              `${i + 1}. **${t.taskName}** — \`${t.priority}\` | \`${t.status}\` | **${t.spentHours}h** | [${t.deliverableOutput}]`
-          )
-          .join('\n') +
-        `\n\n#### 🚨 Key Blocker:\n` +
-        `• *${payload.blockers[0]}*\n\n` +
-        `#### 🏆 Key Highlight:\n` +
-        `• *${payload.achievements[0]}*\n\n` +
-        `#### ⏱️ Logged Hours Breakdown:\n` +
-        `- **Dev:** ${payload.devHours}h | **Testing:** ${payload.testingHours}h | **Meetings:** ${payload.meetingHours}h | **Docs:** ${payload.docHours}h (Total: ${payload.devHours + payload.testingHours + payload.meetingHours + payload.docHours}h)\n\n` +
-        `⚡ **Automatic Form Hydration:** If you are currently on the **[Weekly Report Form](/reports/new)**, the form fields have been populated in real time! You can also click the tool action button below to review and edit.`;
-
-      return {
-        answer,
-        modelUsed: 'CADENCE AI ASSISTANT · INTERNAL TOOL (fill_report_form)',
-        toolCall: {
-          tool: 'fill_report_form',
-          data: payload,
-        },
-      };
-    }
-
-    // =========================================================================
-    // DATA RETRIEVAL (SCOPED BY ROLE)
-    // =========================================================================
-    let recentReports: any[] = [];
-    let allProjects: any[] = [];
-    let allMembers: any[] = [];
-    let myReports: any[] = [];
-
-    if (userRole === Role.TEAM_MEMBER) {
-      const [userReportsRes, projectsRes] = await Promise.all([
-        this.prisma.report.findMany({
-          where: userId ? { userId } : undefined,
-          take: 6,
-          orderBy: { weekStartDate: 'desc' },
-          include: {
-            project: { select: { name: true, code: true } },
-            versions: {
-              orderBy: { versionNumber: 'desc' },
-              take: 1,
-              include: { tasks: true, reviewComments: true },
-            },
-          },
-        }),
-        this.prisma.project.findMany({ where: { status: 'ACTIVE' } }),
-      ]);
-      myReports = userReportsRes;
-      allProjects = projectsRes;
-    } else {
-      const [reportsRes, projectsRes, membersRes] = await Promise.all([
-        this.prisma.report.findMany({
-          take: 12,
-          orderBy: { weekStartDate: 'desc' },
-          include: {
-            user: { select: { fullName: true, title: true, email: true } },
-            project: { select: { name: true, code: true } },
-            versions: {
-              orderBy: { versionNumber: 'desc' },
-              take: 1,
-              include: { tasks: true },
-            },
-          },
-        }),
-        this.prisma.project.findMany(),
-        this.prisma.user.findMany({ where: { role: Role.TEAM_MEMBER } }),
-      ]);
-      recentReports = reportsRes;
-      allProjects = projectsRes;
-      allMembers = membersRes;
     }
 
     // Metrics for Managers
@@ -423,7 +706,8 @@ Member Data Context:
 MEMBER COPILOT RULES:
 1. You are here to empower ${userName} with their engineering deliverables, task drafting, blocker structuring, time calculation, and tab navigation.
 2. If ${userName} asks to draft tasks, format blockers, or write their weekly report, give them concrete, high-quality, professional technical examples.
-3. Do NOT leak team-wide compliance audits, private manager reviews, or colleague unsubmitted drafts.
+3. Cadence has an active 'fill_report_form' internal tool that automatically hydrates weekly report fields in real time for team members. Never claim you cannot interact with or populate the form. If the user wants to populate the form, instruct them that the internal tool is active or encourage them to trigger autofill.
+4. Do NOT leak team-wide compliance audits, private manager reviews, or colleague unsubmitted drafts.
 `;
         } else {
           prompt += `
@@ -444,7 +728,7 @@ Current User Question: "${query}"
 
 STRICT GUARDRAILS:
 1. Identify yourself strictly as "CADENCE AI ASSISTANT".
-2. ABSOLUTE ZERO DATABASE DELETION OR MODIFICATION: You have zero tools or permissions to delete, drop, wipe, or update DB records. Firmly refuse any such request.
+2. ABSOLUTE ZERO DATABASE DELETION OR DROP: You cannot delete, drop, wipe, or destroy database records or schema. (UI form field hydration for weekly reports is fully supported via the fill_report_form tool).
 3. ABSOLUTE ZERO IMAGE GENERATION: You cannot generate or render images or graphics. Firmly refuse any image generation request.
 4. ONLY answer questions directly pertaining to engineering reports, tasks, deliverables, blockers, active projects, hours, and Cadence workspace tabs.
 5. If the user asks about the current tab (${activeTab ? activeTab.name : 'Unknown'}) or any other tab, explain its purpose, key sections, and what they can do according to their role (${userRole}).
