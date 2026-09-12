@@ -14,11 +14,13 @@ export class AiService {
   ) {}
 
   private lastDraftByUser = new Map<string, any>();
+  private lastDraftNoteByUser = new Map<string, string>();
 
   private generateAutofillPayload(
     q: string = '',
     allProjects: any[] = [],
     previousDraft?: any,
+    userKey?: string,
   ) {
     const qLower = (q || '').toLowerCase();
 
@@ -361,6 +363,29 @@ export class AiService {
       }
     });
 
+    // 4. Project-Specific Default Notes
+    let defaultNotes = '';
+    if (isMobile) {
+      defaultNotes =
+        'This week, significant progress was achieved across the Mobile App Redesign initiative. Successfully implemented the offline synchronization engine and cached SQLite reporting, finalized user onboarding transitions, and signed off on UI/UX designs for core reporting screens. Actively investigating cross-platform UI component inconsistencies across iOS 16 and Android 14 to ensure a smooth UI freeze.';
+    } else if (isCloud) {
+      defaultNotes =
+        'This week, major progress was achieved on the Kubernetes cloud migration on AWS. Staging workloads are running with zero downtime and improved compute efficiency. Awaiting enterprise security review for VPC CIDR whitelisting prior to production cutover.';
+    } else {
+      defaultNotes =
+        'This week, substantial progress was made on developer tooling and backend optimization. Successfully refactored JWT authentication middleware, RBAC guards, and PostgreSQL composite indexing. Actively monitoring Redis cluster latency spikes with DevOps.';
+    }
+
+    // Check for inline custom note in user query (e.g. "note: ...", "comment: ...", "add note ...")
+    let customNote = '';
+    const inlineMatch = q.match(/(?:note|notes|general\s+comment|comment)\s*(?::|saying|that|=)\s*([^\n\r]+)/i);
+    if (inlineMatch && inlineMatch[1]?.trim()) {
+      customNote = inlineMatch[1].trim().replace(/^["']|["']$/g, '');
+    }
+
+    const lastComment = userKey ? this.lastDraftNoteByUser.get(userKey) : null;
+    const finalNotes = customNote || lastComment || previousDraft?.notes || defaultNotes;
+
     return {
       projectId: matchedProject.id,
       projectCode: matchedProject.code,
@@ -375,6 +400,7 @@ export class AiService {
       meetingHours,
       docHours,
       tasksPlannedNextWeek: plannedNextWeek,
+      notes: finalNotes,
     };
   }
 
@@ -391,6 +417,7 @@ export class AiService {
     const userName: string = user?.fullName || 'Engineering Team Member';
     const userTitle: string = user?.title || (userRole === Role.TEAM_MEMBER ? 'Software Engineer' : 'Engineering Manager');
     const userId: string = user?.id || '';
+    const userKey = userId || userName;
 
     // =========================================================================
     // GUARDRAIL 1: PREVENT DATABASE DELETION / MODIFICATION / DROP ATTEMPTS
@@ -525,19 +552,24 @@ export class AiService {
     // - "populate the report"
     // =========================================================================
     const isPureTabOrBlockerExplanation =
-      /^(what is|explain|define|how do i write|how should i write|tips for|guide to)\s+(a\s+)?(blocker|task|highlight|tab|form)/i.test(q);
+      /^(what is|explain|define|how do i write|how should i write|tips for|guide to)\s+(a\s+)?(blocker|task|highlight|tab|form|note|comment)/i.test(q);
 
     const isAutofillIntent =
       !isPureTabOrBlockerExplanation &&
       (
         // Direct autofill / populate verbs
         /(auto-?fill|populate|hydrate)/i.test(q) ||
-        // "fill the form / report / fields / it"
-        /(fill|fill\s+out|fill\s+in)\s+(the\s+|this\s+)?(fields?|form|report|inputs?|it)/i.test(q) ||
+        // "fill the form / report / fields / it / notes"
+        /(fill|fill\s+out|fill\s+in)\s+(the\s+|this\s+)?(fields?|form|report|inputs?|it|notes?|comments?)/i.test(q) ||
         // "add / put / apply / insert to the form / report"
         /(add|put|apply|insert|copy)\s+(this|these|those|it|them)?\s*(to|into|in|on)\s+(the\s+|this\s+)?(form|report|page)/i.test(q) ||
         // "can you add those to the form"
         /add\s+(those|this|them|these|it)\s+to/i.test(q) ||
+        // "add a note / add note / add a general comment / add comments"
+        /(add|populate|fill|insert|include)\s+(a\s+)?(note|notes|general\s+comment|comment)/i.test(q) ||
+        // Note or comment requests with context
+        ((q.includes('note') || q.includes('comment')) &&
+          (q.includes('week') || q.includes('report') || q.includes('form') || q.includes('general') || q.includes('add') || q.includes('populate'))) ||
         // "i want add / to add mobile design project with 2 blockers and 5 highlights"
         /i\s+want\s+(to\s+)?(add|fill|populate|create|make|draft)\s+/i.test(q) ||
         // "make/create/generate/draft/add [count] tasks/report/project"
@@ -553,9 +585,9 @@ export class AiService {
             q.includes('autofill') ||
             q.includes('fill') ||
             q.includes('form'))) ||
-        // Mentions a project and add/report/blocker/highlight
+        // Mentions a project and add/report/blocker/highlight/note
         ((q.includes('mobile') || q.includes('cloud') || q.includes('tooling') || q.includes('mar-01') || q.includes('clm-02') || q.includes('int-03')) &&
-          (q.includes('add') || q.includes('report') || q.includes('blocker') || q.includes('highlight') || q.includes('fill') || q.includes('draft')))
+          (q.includes('add') || q.includes('report') || q.includes('blocker') || q.includes('highlight') || q.includes('fill') || q.includes('draft') || q.includes('note')))
       );
 
     if (isAutofillIntent) {
@@ -566,14 +598,13 @@ export class AiService {
         };
       }
 
-      const userKey = userId || userName;
       const previousDraft = this.lastDraftByUser.get(userKey);
-      const payload = this.generateAutofillPayload(q, allProjects, previousDraft);
+      const payload = this.generateAutofillPayload(query || q, allProjects, previousDraft, userKey);
       this.lastDraftByUser.set(userKey, payload);
 
       const answer =
         `### ⚡ Cadence AI Internal Tool Executed: \`fill_report_form\`\n\n` +
-        `Hello **${userName}**! I have invoked the internal **\`fill_report_form\`** tool and automatically populated your **Weekly Report Form** for **${payload.projectName} [Code: ${payload.projectCode}]** with **${payload.tasks.length} technical tasks**, **${payload.blockers.length} blockers**, **${payload.achievements.length} highlights**, and logged hours!\n\n` +
+        `Hello **${userName}**! I have invoked the internal **\`fill_report_form\`** tool and automatically populated your **Weekly Report Form** for **${payload.projectName} [Code: ${payload.projectCode}]** with **${payload.tasks.length} technical tasks**, **${payload.blockers.length} blockers**, **${payload.achievements.length} highlights**, logged hours, and **general notes**!\n\n` +
         `#### 📁 Selected Project:\n` +
         `• **${payload.projectName}** [\`${payload.projectCode}\`]\n\n` +
         `#### 📋 Tasks Generated (${payload.tasks.length}):\n` +
@@ -589,7 +620,9 @@ export class AiService {
         payload.achievements.map((a: string, i: number) => `${i + 1}. *${a}*`).join('\n') +
         `\n\n#### ⏱️ Logged Hours Breakdown:\n` +
         `- **Dev:** ${payload.devHours}h | **Testing:** ${payload.testingHours}h | **Meetings:** ${payload.meetingHours}h | **Docs:** ${payload.docHours}h (Total: ${payload.devHours + payload.testingHours + payload.meetingHours + payload.docHours}h)\n\n` +
-        `⚡ **Automatic Form Hydration:** If you are currently on the **[Weekly Report Form](/reports/new)**, the form fields (Project, Tasks, Blockers, Highlights, Hours) have been populated in real time! You can also click the tool action button below to review and edit.`;
+        `#### 📝 General Notes & Comments:\n` +
+        `• *${payload.notes}*\n\n` +
+        `⚡ **Automatic Form Hydration:** If you are currently on the **[Weekly Report Form](/reports/new)**, the form fields (Project, Tasks, Blockers, Highlights, Hours, Notes) have been populated in real time! You can also click the tool action button below to review and edit.`;
 
       return {
         answer,
@@ -751,6 +784,12 @@ STRICT GUARDRAILS:
 
             if (response && response.text) {
               this.logger.log(`Generated response using ${model} for user ${userName} (${userRole})`);
+              const quotedNote =
+                response.text.match(/"([^"]{30,})"/s) ||
+                response.text.match(/“([^”]{30,})”/s);
+              if (quotedNote && userKey) {
+                this.lastDraftNoteByUser.set(userKey, quotedNote[1].trim());
+              }
               return {
                 answer: response.text,
                 modelUsed: 'CADENCE AI ASSISTANT',
@@ -816,6 +855,17 @@ STRICT GUARDRAILS:
             : latest?.status === 'APPROVED'
             ? `✅ **Approved:** Your report was reviewed and signed off by management!`
             : `📝 **Draft:** Your report is in draft. Make sure to submit before Friday 17:00!`);
+      } else if (/note|comment|general/.test(q)) {
+        const comment =
+          'This week, significant progress was achieved across sprint engineering milestones and code reviews. Core deliverables were completed on schedule, and key blockers have been documented and escalated to ensure milestone velocity remains on track.';
+        if (userKey) {
+          this.lastDraftNoteByUser.set(userKey, comment);
+        }
+        fallbackText =
+          `### 📝 General Report Comment Draft\n\n` +
+          `Here is a professional summary comment you can include in Section 6 (*Optional Notes or Additional Links*) of your weekly report:\n\n` +
+          `> "${comment}"\n\n` +
+          `Would you like me to populate this into your **Weekly Report Form**? You can say **"auto fill it"** or click the auto-fill suggestions chip below!`;
       } else {
         fallbackText = `Hello **${userName}**! I am your **Cadence Engineering Copilot**. You are currently on the **${activeTab?.name || 'Workspace'}**.\n\nI can help you:\n- **Draft Weekly Report Tasks:** Suggest task breakdowns, percentages, and deliverables\n- **Formulate Blockers:** Write clear, actionable blocker explanations\n- **Review Logged Hours:** Check time distribution across dev, test, meetings, and docs\n- **Explain Workspace Tabs:** Ask *"Explain this tab"* or *"What can I do here?"* to learn all tab features!`;
       }

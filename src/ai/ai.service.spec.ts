@@ -127,4 +127,56 @@ describe('AiService Autofill & Copilot Tests', () => {
     expect(res.modelUsed).toContain('TABS TOOL');
     expect(res.answer).toContain('Weekly Report Form');
   });
+
+  it('7. should generate notes in fill_report_form payload when user requests report generation', async () => {
+    const res = await aiService.generateResponse(
+      'i want add mobile design project with 2 blockers and 5 highlights',
+      memberUser,
+    );
+
+    expect(res.toolCall).toBeDefined();
+    expect(res.toolCall?.tool).toBe('fill_report_form');
+    expect(res.toolCall?.data.notes).toBeDefined();
+    expect(typeof res.toolCall?.data.notes).toBe('string');
+    expect(res.toolCall?.data.notes.length).toBeGreaterThan(20);
+    expect(res.toolCall?.data.notes).toContain('Mobile App Redesign');
+    expect(res.answer).toContain('General Notes & Comments');
+  });
+
+  it('8. should preserve project context and populate notes when user follows up with "auto fill it"', async () => {
+    // Initial call
+    await aiService.generateResponse(
+      'i want add mobile design project with 2 blockers and 5 highlights',
+      memberUser,
+    );
+
+    // Follow-up
+    const res = await aiService.generateResponse('auto fill it', memberUser);
+
+    expect(res.toolCall).toBeDefined();
+    expect(res.toolCall?.tool).toBe('fill_report_form');
+    expect(res.toolCall?.data.projectCode).toBe('MAR-01');
+    expect(res.toolCall?.data.notes).toBeDefined();
+    expect(res.toolCall?.data.notes).toContain('Mobile App Redesign');
+  });
+
+  it('9. should trigger fill_report_form when user asks "Add a general comment about my week"', async () => {
+    const res = await aiService.generateResponse('Add a general comment about my week', memberUser);
+
+    expect(res.toolCall).toBeDefined();
+    expect(res.toolCall?.tool).toBe('fill_report_form');
+    expect(res.toolCall?.data.notes).toBeDefined();
+    expect(res.toolCall?.data.notes.length).toBeGreaterThan(10);
+  });
+
+  it('10. should extract custom inline note when specified: "add note: Deployed v2.4 staging release"', async () => {
+    const res = await aiService.generateResponse(
+      'add note: Deployed v2.4 staging release and completed security audit',
+      memberUser,
+    );
+
+    expect(res.toolCall).toBeDefined();
+    expect(res.toolCall?.tool).toBe('fill_report_form');
+    expect(res.toolCall?.data.notes).toBe('Deployed v2.4 staging release and completed security audit');
+  });
 });
